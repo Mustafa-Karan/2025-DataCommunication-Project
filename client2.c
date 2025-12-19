@@ -65,8 +65,34 @@ uint16_t internetChecksum(unsigned char *data, int len) {
     return ~sum;
 }
 
-//HAMMING DECODE (Sadece kontrol için basit XOR testi) 
-void hammingEncode(unsigned char data, unsigned char *hamming);
+//HAMMING DECODE 
+void hammingEncode(unsigned char data, unsigned char *hamming) {
+    unsigned char d[8];
+    for (int i = 0; i < 8; i++)
+        d[i] = (data >> (7 - i)) & 1;  // D1..D8
+
+    unsigned char h[12];
+    // Veri bitlerini yerleştir
+    h[2]  = d[0];  // D1
+    h[4]  = d[1];  // D2
+    h[5]  = d[2];  // D3
+    h[6]  = d[3];  // D4
+    h[8]  = d[4];  // D5
+    h[9]  = d[5];  // D6
+    h[10] = d[6];  // D7
+    h[11] = d[7];  // D8
+
+    // Parite bitlerini hesapla (even parity)
+    h[0] = h[2] ^ h[4] ^ h[6] ^ h[8] ^ h[10];        // P1
+    h[1] = h[2] ^ h[5] ^ h[6] ^ h[9] ^ h[10];        // P2
+    h[3] = h[4] ^ h[5] ^ h[6] ^ h[11];               // P4
+    h[7] = h[8] ^ h[9] ^ h[10] ^ h[11];              // P8
+
+    // hamming dizisini 0/1 stringine çevir
+    for (int i = 0; i < 12; i++)
+        hamming[i] = h[i] + '0';
+    hamming[12] = '\0';
+}
 
 int main() {
     printf("Client2 çalışıyor! (alıcı)\n");
@@ -170,6 +196,57 @@ int main() {
         int p3 = b4 ^ b5 ^ b6 ^ b7;
 
         int hataBit = (p3 << 2) | (p2 << 1) | p1;
+        else if (strcmp(method, "HAMMING") == 0) {
+    printf("Hamming dogrulama islemi baslatiliyor...\n");
+    
+    int data_len = strlen(data);
+    int control_len = strlen(control);
+    
+    // Her karakter 12 bit Hamming kodu üretir
+    int expected_len = data_len * 12;
+    
+    if (control_len != expected_len) {
+        printf("HATA: Hamming kodu uzunluk uyumsuzlugu!\n");
+        printf("Beklenen: %d bit, Gelen: %d bit\n", expected_len, control_len);
+        continue;
+    }
+    
+    // Her karakteri ayrı ayrı encode et ve karşılaştır
+    char computed[8192] = "";
+    
+    for (int i = 0; i < data_len; i++) {
+        unsigned char hamming[13];
+        hammingEncode(data[i], hamming);
+        strcat(computed, (char*)hamming);
+    }
+    
+    printf("DATA: %s\n", data);
+    printf("Hesaplanan Hamming: %s\n", computed);
+    printf("Gelen Hamming:      %s\n", control);
+    
+    // Karşılaştırma
+    if (strcmp(computed, control) == 0) {
+        printf("HATA YOK! Veri dogru.\n");
+    } else {
+        printf("HATA VAR! Veri bozulmus.\n");
+        
+        // Hangi karakterlerde hata var göster (opsiyonel)
+        int errors = 0;
+        for (int i = 0; i < data_len; i++) {
+            char comp_block[13], recv_block[13];
+            strncpy(comp_block, computed + (i*12), 12);
+            strncpy(recv_block, control + (i*12), 12);
+            comp_block[12] = '\0';
+            recv_block[12] = '\0';
+            
+            if (strcmp(comp_block, recv_block) != 0) {
+                printf("  Karakter %d ('%c') hatali\n", i+1, data[i]);
+                errors++;
+            }
+        }
+        printf("Toplam %d karakter hatali bulundu.\n", errors);
+    }
+}
 
         if (hataBit == 0) {
             printf("HATA YOK! Veri dogru.\n");
