@@ -9,7 +9,8 @@
 // PARITY 
 int parityHesapla(char *metin) {
     int ones = 0;
-    for (int i = 0; i < strlen(metin); i++) {
+    int len = strlen(metin);
+    for (int i = 0; i < len; i++) {
         unsigned char c = metin[i];
         for (int bit = 7; bit >= 0; bit--) {
             ones += ((c >> bit) & 1);
@@ -18,7 +19,7 @@ int parityHesapla(char *metin) {
     return ones % 2; // even parity
 }
 
-//2D PARITY 
+// 2D PARITY 
 void hesapla2DParity(char *metin, char *rowParity, char *colParity) {
     int len = strlen(metin);
     int colOnes[8] = {0};
@@ -40,7 +41,7 @@ void hesapla2DParity(char *metin, char *rowParity, char *colParity) {
     colParity[8] = '\0';
 }
 
-//CRC-8
+// CRC-8
 unsigned char crc8(unsigned char *data, int len) {
     unsigned char crc = 0;
     for (int i = 0; i < len; i++) {
@@ -53,7 +54,7 @@ unsigned char crc8(unsigned char *data, int len) {
     return crc;
 }
 
-//IP CHECKSUM 
+// IP CHECKSUM 
 uint16_t internetChecksum(unsigned char *data, int len) {
     uint32_t sum = 0;
     for (int i = 0; i < len; i += 2) {
@@ -65,8 +66,43 @@ uint16_t internetChecksum(unsigned char *data, int len) {
     return ~sum;
 }
 
-//HAMMING DECODE (Sadece kontrol için basit XOR testi) 
-void hammingEncode(unsigned char data, unsigned char *hamming);
+/* =========================
+   HAMMING (12,8) DECODE
+   ========================= */
+void hammingDecode12_8(const char *hamming) {
+    int h[12];
+    for (int i = 0; i < 12; i++)
+        h[i] = hamming[i] - '0';
+
+    // Even parity check
+    int p1 = h[0] ^ h[2] ^ h[4] ^ h[6] ^ h[8] ^ h[10];
+    int p2 = h[1] ^ h[2] ^ h[5] ^ h[6] ^ h[9] ^ h[10];
+    int p4 = h[3] ^ h[4] ^ h[5] ^ h[6] ^ h[11];
+    int p8 = h[7] ^ h[8] ^ h[9] ^ h[10] ^ h[11];
+
+    int errorPos = (p8 << 3) | (p4 << 2) | (p2 << 1) | p1;
+
+    if (errorPos != 0) {
+        printf("HATA TESPIT EDILDI! Bit pozisyonu: %d\n", errorPos);
+        h[errorPos - 1] ^= 1; // düzelt
+        printf("HATA DUZELTILDI.\n");
+    } else {
+        printf("HATA YOK!\n");
+    }
+
+    // Veri bitlerini çıkar
+    unsigned char data =
+        (h[2]  << 7) |
+        (h[4]  << 6) |
+        (h[5]  << 5) |
+        (h[6]  << 4) |
+        (h[8]  << 3) |
+        (h[9]  << 2) |
+        (h[10] << 1) |
+        (h[11]);
+
+    printf("Cozulen karakter: '%c' (0x%02X)\n", data, data);
+}
 
 int main() {
     printf("Client2 çalışıyor! (alıcı)\n");
@@ -98,7 +134,6 @@ int main() {
         buf[r] = '\0';
         printf("\n--- Paket Alındı ---\n%s\n", buf);
 
-        // Paket ayrıştır
         char *data = strtok(buf, "|");
         char *method = strtok(NULL, "|");
         char *control = strtok(NULL, "|");
@@ -112,81 +147,45 @@ int main() {
         printf("METHOD: %s\n", method);
         printf("CONTROL: %s\n", control);
 
-        
-        //DOĞRULAMA KISMI
         if (strcmp(method, "PARITY") == 0) {
             int p = parityHesapla(data);
-            printf("Hesaplanan Parite = %d\n", p);
             printf((p == atoi(control)) ? "HATA YOK!\n" : "HATA VAR!\n");
         }
 
         else if (strcmp(method, "2DPARITY") == 0) {
             char row[256], col[9];
             hesapla2DParity(data, row, col);
-            printf("Row Hesaplanan: %s\n", row);
-            printf("Col Hesaplanan: %s\n", col);
-
             char *recvRow = control;
             char *recvCol = strtok(NULL, "|");
-
-            if (!recvCol) {
-                printf("PACKET ERROR: 2DPARITY formatı yanlış!\n");
-                continue;
-            }
-
-            int ok = (!strcmp(row, recvRow) && !strcmp(col, recvCol));
+            int ok = recvCol && !strcmp(row, recvRow) && !strcmp(col, recvCol);
             printf(ok ? "HATA YOK!\n" : "HATA VAR!\n");
         }
 
         else if (strcmp(method, "CRC8") == 0) {
             unsigned char crc = crc8((unsigned char*)data, strlen(data));
-            printf("Hesaplanan CRC8 = %02X\n", crc);
             printf((crc == strtol(control, NULL, 16)) ? "HATA YOK!\n" : "HATA VAR!\n");
         }
 
         else if (strcmp(method, "IPCHECKSUM") == 0) {
             uint16_t chk = internetChecksum((unsigned char*)data, strlen(data));
-            printf("Hesaplanan IP Checksum = %04X\n", chk);
             printf((chk == strtol(control, NULL, 16)) ? "HATA YOK!\n" : "HATA VAR!\n");
         }
 
         else if (strcmp(method, "HAMMING") == 0) {
-    printf("Hamming decode islemi baslatiliyor...\n");
+            printf("Hamming(12,8) decode basladi...\n");
+            int len = strlen(control);
 
-    if (strlen(data) != 7) {
-        printf("HATA: Hamming(7,4) için 7 bitlik veri gereklidir!\n");
-    } else {
-        int b1 = data[0] - '0';
-        int b2 = data[1] - '0';
-        int b3 = data[2] - '0';
-        int b4 = data[3] - '0';
-        int b5 = data[4] - '0';
-        int b6 = data[5] - '0';
-        int b7 = data[6] - '0';
+            if (len % 12 != 0) {
+                printf("HATALI HAMMING VERISI!\n");
+                continue;
+            }
 
-        // Hamming parity check hesapları
-        int p1 = b1 ^ b3 ^ b5 ^ b7;
-        int p2 = b2 ^ b3 ^ b6 ^ b7;
-        int p3 = b4 ^ b5 ^ b6 ^ b7;
-
-        int hataBit = (p3 << 2) | (p2 << 1) | p1;
-
-        if (hataBit == 0) {
-            printf("HATA YOK! Veri dogru.\n");
-        } else {
-            printf("HATA TESPIT EDILDI! Hatalı bit: %d\n", hataBit);
-
-            int idx = hataBit - 1;
-
-            // Bit'i düzelt
-            char duzeltilmis[8];
-            strcpy(duzeltilmis, data);
-            duzeltilmis[idx] = (duzeltilmis[idx] == '0') ? '1' : '0';
-
-            printf("Düzeltilmiş veri: %s\n", duzeltilmis);
-        }
-    }
-
+            for (int i = 0; i < len; i += 12) {
+                char block[13];
+                strncpy(block, &control[i], 12);
+                block[12] = '\0';
+                hammingDecode12_8(block);
+            }
         }
 
         else {
